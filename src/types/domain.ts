@@ -66,6 +66,22 @@ export interface Client {
   updated_at: string;
 }
 
+export interface ServiceContract {
+  id: string;
+  client_id: string;
+  package_id: string;
+  start_date: string;
+  end_date: string | null;
+  monthly_price: number;
+  payment_status: string;
+  status: string;
+  commercial_responsible_id: string | null;
+  creative_responsible_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ObjectiveGeneral {
   id: string;
   client_id: string;
@@ -230,4 +246,54 @@ export interface PackageItem {
   description: string | null;
   requires_production: boolean;
   requires_approval: boolean;
+}
+
+export interface ClientAccountSnapshot {
+  id: string;
+  client_id: string;
+  captured_at: string;
+  instagram_handle: string | null;
+  tiktok_handle: string | null;
+  facebook_handle: string | null;
+  followers: number | null;
+  avg_views: number | null;
+  engagement_rate: number | null;
+  posting_frequency: string | null;
+  top_posts_notes: string | null;
+  captured_by: string | null;
+  created_at: string;
+}
+
+export interface AIResearchReport {
+  id: string;
+  client_id: string;
+  snapshot_id: string | null;
+  scope: 'local_global';
+  research_json: Record<string, unknown>;
+  diagnostic_json: Record<string, unknown>;
+  status: 'draft' | 'ready' | 'approved';
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyPrefillPayload {
+  id: string;
+  client_id: string;
+  report_id: string;
+  objective_payload_json: Record<string, unknown>;
+  semester_payload_json: Record<string, unknown>;
+  monthly_campaign_payload_json: Record<string, unknown>;
+  status: 'generated' | 'reviewed' | 'applied';
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface MonthlyGridSuggestion {
+  id: string;
+  campaign_id: string;
+  source: 'rules_plus_ai';
+  suggestion_json: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
 }

@@ -10,6 +10,8 @@ import { RidersPage } from './features/riders/RidersPage';
 import { RiderEditorPage } from './features/riders/RiderEditorPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { ProductionBoardPage } from './features/production/ProductionBoardPage';
+import { ClientsPage } from './features/clients/ClientsPage';
+import { PackagesPage } from './features/packages/PackagesPage';
 
 export default function App() {
   const { ready, session } = useAuth();
@@ -26,6 +28,9 @@ export default function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="clients" element={<ClientsPage />} />
+        <Route path="clients/:id" element={<ClientsPage />} />
+        <Route path="packages" element={<PackagesPage />} />
         <Route path="strategy" element={<StrategyPage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="campaigns/:campaignId/workspace" element={<WorkspacePage />} />

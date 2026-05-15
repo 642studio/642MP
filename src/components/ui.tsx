@@ -1,8 +1,14 @@
 import clsx from 'clsx';
 import { forwardRef } from 'react';
 
-export const Card = ({ className, children }: { className?: string; children: React.ReactNode }) => (
-  <article className={clsx('card', className)}>{children}</article>
+type CardProps = React.HTMLAttributes<HTMLElement> & {
+  children: React.ReactNode;
+};
+
+export const Card = ({ className, children, ...props }: CardProps) => (
+  <article className={clsx('card', className)} {...props}>
+    {children}
+  </article>
 );
 
 export const PageHeader = ({

@@ -7,6 +7,7 @@ import { useToast } from '../../contexts/ToastContext';
 
 interface FormValues {
   openai_key: string;
+  serper_api_key: string;
   ai_model: string;
 }
 
@@ -19,6 +20,7 @@ export const SettingsPage = () => {
   const form = useForm<FormValues>({
     defaultValues: {
       openai_key: '',
+      serper_api_key: '',
       ai_model: 'gpt-5.2-mini',
     },
   });
@@ -28,6 +30,7 @@ export const SettingsPage = () => {
     const map = new Map(settingsQuery.data.map((item) => [item.key, item.value]));
     form.reset({
       openai_key: map.get('openai_key') ?? '',
+      serper_api_key: map.get('serper_api_key') ?? '',
       ai_model: map.get('ai_model') ?? 'gpt-5.2-mini',
     });
   }, [settingsQuery.data]);
@@ -36,6 +39,7 @@ export const SettingsPage = () => {
     mutationFn: async (values: FormValues) => {
       await Promise.all([
         settingsApi.upsert('openai_key', values.openai_key, true),
+        settingsApi.upsert('serper_api_key', values.serper_api_key, true),
         settingsApi.upsert('ai_model', values.ai_model, false),
       ]);
     },
@@ -52,13 +56,28 @@ export const SettingsPage = () => {
     <section>
       <PageHeader
         title="Configuración"
-        subtitle="Ajustes técnicos de 642MP: API Key y modelo IA para funciones asistidas."
+        subtitle="Ajustes técnicos: OpenAI + Serper para diagnóstico y estrategias asistidas."
       />
 
       <Card>
+        <div className="grid-2" style={{ marginBottom: 14 }}>
+          <Card>
+            <h3>Estado OpenAI</h3>
+            <p className="muted">{form.watch('openai_key') ? 'Conectado (key configurada)' : 'No configurado'}</p>
+          </Card>
+          <Card>
+            <h3>Estado Serper</h3>
+            <p className="muted">{form.watch('serper_api_key') ? 'Conectado (key configurada)' : 'No configurado'}</p>
+          </Card>
+        </div>
+
         <form onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}>
           <Field label="API Key OpenAI">
             <Input type="password" placeholder="sk-..." {...form.register('openai_key')} />
+          </Field>
+
+          <Field label="API Key Serper">
+            <Input type="password" placeholder="serper_..." {...form.register('serper_api_key')} />
           </Field>
 
           <Field label="Modelo IA">

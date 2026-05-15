@@ -5,6 +5,8 @@ import logoWhite from '../assets/642-logo-white.png';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
+  { to: '/clients', label: 'Clientes' },
+  { to: '/packages', label: 'Paquetes' },
   { to: '/strategy', label: 'Estrategia' },
   { to: '/campaigns', label: 'Campañas' },
   { to: '/production', label: 'Producción' },

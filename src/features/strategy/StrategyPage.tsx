@@ -2,13 +2,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   campaignApi,
   clientApi,
   objectiveApi,
   packageApi,
   semesterApi,
+  strategyPrefillApi,
 } from '../../lib/db';
 import { Button, Card, EmptyState, Field, Input, LoadingState, PageHeader, Select, Textarea } from '../../components/ui';
 import { useToast } from '../../contexts/ToastContext';
@@ -55,19 +57,23 @@ type CampaignForm = z.infer<typeof campaignSchema>;
 export const StrategyPage = () => {
   const qc = useQueryClient();
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedPrefillId, setSelectedPrefillId] = useState<string>('');
 
   const clientsQuery = useQuery({ queryKey: ['clients'], queryFn: clientApi.list });
   const objectivesQuery = useQuery({ queryKey: ['objectives'], queryFn: objectiveApi.list });
   const semesterQuery = useQuery({ queryKey: ['semester-plans'], queryFn: () => semesterApi.list() });
   const campaignsQuery = useQuery({ queryKey: ['campaigns'], queryFn: campaignApi.list });
-  const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: packageApi.list });
+  const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => packageApi.list() });
+  const prefillQuery = useQuery({ queryKey: ['strategy-prefills'], queryFn: strategyPrefillApi.listAll });
 
   const loading =
     clientsQuery.isLoading ||
     objectivesQuery.isLoading ||
     semesterQuery.isLoading ||
     campaignsQuery.isLoading ||
-    packagesQuery.isLoading;
+    packagesQuery.isLoading ||
+    prefillQuery.isLoading;
 
   const objectiveForm = useForm<ObjectiveForm>({
     resolver: zodResolver(objectiveSchema),
@@ -160,6 +166,61 @@ export const StrategyPage = () => {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
+  const loadPrefillIntoForms = (prefillId: string) => {
+    const prefill = (prefillQuery.data ?? []).find((item) => item.id === prefillId);
+    if (!prefill) return;
+
+    const objective = prefill.objective_payload_json ?? {};
+    const semester = prefill.semester_payload_json ?? {};
+    const monthly = prefill.monthly_campaign_payload_json ?? {};
+
+    objectiveForm.reset({
+      client_id: prefill.client_id,
+      title: String(objective.title ?? ''),
+      business_goal: String(objective.business_goal ?? ''),
+      primary_kpi: String(objective.primary_kpi ?? ''),
+      target_value: String(objective.target_value ?? ''),
+      start_date: String(objective.start_date ?? ''),
+      end_date: String(objective.end_date ?? ''),
+    });
+
+    semesterForm.reset({
+      objective_general_id: '',
+      name: String(semester.name ?? ''),
+      start_date: String(semester.start_date ?? ''),
+      end_date: String(semester.end_date ?? ''),
+      strategic_focus: String(semester.strategic_focus ?? ''),
+      pillars: Array.isArray(semester.pillars) ? semester.pillars.join(', ') : '',
+      risks: Array.isArray(semester.risks) ? semester.risks.join(', ') : '',
+    });
+
+    campaignForm.reset({
+      objective_general_id: '',
+      semester_plan_id: '',
+      client_id: prefill.client_id,
+      package_id: '',
+      month_date: String(monthly.month_date ?? '').slice(0, 7),
+      name: String(monthly.name ?? ''),
+      monthly_goal: String(monthly.monthly_goal ?? ''),
+      audience: String(monthly.audience ?? ''),
+      tone: String(monthly.tone ?? ''),
+      cta: String(monthly.cta ?? ''),
+      promotion: String(monthly.promotion ?? ''),
+    });
+
+    showToast('Prefill cargado en formularios. Revisa y confirma.', 'ok');
+  };
+
+  useEffect(() => {
+    const routePrefillId = searchParams.get('prefill_id');
+    if (routePrefillId && prefillQuery.data?.length) {
+      setSelectedPrefillId(routePrefillId);
+      loadPrefillIntoForms(routePrefillId);
+      searchParams.delete('prefill_id');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [prefillQuery.data]);
+
   const strategyRows = useMemo(() => {
     const objectiveById = new Map((objectivesQuery.data ?? []).map((item) => [item.id, item]));
     const semesterById = new Map((semesterQuery.data ?? []).map((item) => [item.id, item]));
@@ -178,6 +239,31 @@ export const StrategyPage = () => {
         title="Jerarquía Estratégica"
         subtitle="Objetivo General → Plan Semestral → Campaña Mensual."
       />
+
+      <Card>
+        <h3>Importar prefill desde reporte</h3>
+        {prefillQuery.data?.length ? (
+          <div className="inline-grid">
+            <Field label="Prefill disponible">
+              <Select value={selectedPrefillId} onChange={(event) => setSelectedPrefillId(event.target.value)}>
+                <option value="">Selecciona</option>
+                {prefillQuery.data.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {(item.clients?.name ?? 'Cliente')} · {item.status} · {item.created_at.slice(0, 10)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div style={{ display: 'flex', alignItems: 'end' }}>
+              <Button disabled={!selectedPrefillId} onClick={() => loadPrefillIntoForms(selectedPrefillId)}>
+                Cargar en formularios
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <EmptyState label="No hay prefills generados todavía desde diagnóstico." />
+        )}
+      </Card>
 
       <div className="grid-3">
         <Card>

@@ -29,3 +29,18 @@ verify_jwt = true
 
 [functions.ai-feed-suggestions]
 verify_jwt = true
+
+[functions.research-client-context]
+verify_jwt = true
+
+[functions.generate-account-diagnostic]
+verify_jwt = true
+
+[functions.generate-strategy-prefill]
+verify_jwt = true
+
+[functions.generate-package-grid-suggestions]
+verify_jwt = true
+
+[functions.apply-grid-suggestions]
+verify_jwt = true

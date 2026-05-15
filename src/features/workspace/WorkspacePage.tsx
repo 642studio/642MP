@@ -16,7 +16,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { campaignApi, feedApi, packageApi, productionApi, riderApi } from '../../lib/db';
+import { campaignApi, feedApi, gridSuggestionApi, packageApi, productionApi, riderApi, serviceContractApi } from '../../lib/db';
 import type { FeedItem } from '../../types/domain';
 import {
   Button,
@@ -74,6 +74,7 @@ export const WorkspacePage = () => {
 
   const [tab, setTab] = useState('summary');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedSlots, setSelectedSlots] = useState<number[]>([]);
 
   const campaignQuery = useQuery({ queryKey: ['campaign', campaignId], queryFn: () => campaignApi.get(campaignId) });
   const feedQuery = useQuery({ queryKey: ['feed', campaignId], queryFn: () => feedApi.list(campaignId) });
@@ -81,8 +82,19 @@ export const WorkspacePage = () => {
     queryKey: ['production', campaignId],
     queryFn: () => productionApi.list(campaignId),
   });
-  const packageQuery = useQuery({ queryKey: ['packages'], queryFn: packageApi.list });
+  const packageQuery = useQuery({ queryKey: ['packages'], queryFn: () => packageApi.list() });
   const ridersQuery = useQuery({ queryKey: ['riders'], queryFn: riderApi.list });
+  const activeContractQuery = useQuery({
+    queryKey: ['campaign-active-contract', campaignId],
+    queryFn: async () => {
+      const baseCampaign = await campaignApi.get(campaignId);
+      return serviceContractApi.getActiveForClient(baseCampaign.client_id, baseCampaign.month_date);
+    },
+  });
+  const gridSuggestionsQuery = useQuery({
+    queryKey: ['grid-suggestions', campaignId],
+    queryFn: () => gridSuggestionApi.listByCampaign(campaignId),
+  });
 
   const addFeedMutation = useMutation({
     mutationFn: (payload: Partial<FeedItem>) => feedApi.create(payload),
@@ -120,12 +132,32 @@ export const WorkspacePage = () => {
     },
   });
 
+  const generateGridSuggestionMutation = useMutation({
+    mutationFn: () => gridSuggestionApi.generate(campaignId),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['grid-suggestions', campaignId] });
+      showToast('Grid sugerido generado', 'ok');
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const applyGridSuggestionMutation = useMutation({
+    mutationFn: () => gridSuggestionApi.apply(campaignId, selectedSlots),
+    onSuccess: async (result) => {
+      await qc.invalidateQueries({ queryKey: ['feed', campaignId] });
+      showToast(`Insertadas ${result.inserted} piezas desde sugerencia`, 'ok');
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
   const loading =
     campaignQuery.isLoading ||
     feedQuery.isLoading ||
     packageQuery.isLoading ||
     productionQuery.isLoading ||
-    ridersQuery.isLoading;
+    ridersQuery.isLoading ||
+    activeContractQuery.isLoading ||
+    gridSuggestionsQuery.isLoading;
 
   if (loading) return <LoadingState label="Cargando workspace..." />;
 
@@ -135,7 +167,15 @@ export const WorkspacePage = () => {
   const feed = feedQuery.data ?? [];
   const sessions = productionQuery.data ?? [];
   const rider = (ridersQuery.data ?? []).find((r) => r.campaign_id === campaign.id) ?? null;
-  const currentPackage = (packageQuery.data ?? []).find((pkg) => pkg.id === campaign.package_id);
+  const packageIdFromContract = activeContractQuery.data?.package_id ?? null;
+  const currentPackageId = packageIdFromContract || campaign.package_id || null;
+  const currentPackage = (packageQuery.data ?? []).find((pkg) => pkg.id === currentPackageId);
+  const latestGridSuggestion = (gridSuggestionsQuery.data ?? [])[0] ?? null;
+  const latestSlots: Record<string, unknown>[] = Array.isArray(
+    (latestGridSuggestion?.suggestion_json as Record<string, unknown>)?.slots,
+  )
+    ? (((latestGridSuggestion?.suggestion_json as Record<string, unknown>).slots as Record<string, unknown>[]) || [])
+    : [];
 
   const contractedMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -273,34 +313,102 @@ export const WorkspacePage = () => {
           <Card>
             <div className="between">
               <h3>Grid de feed</h3>
-              <Button
-                className="btn-primary"
-                onClick={() =>
-                  addFeedMutation.mutate({
-                    campaign_id: campaign.id,
-                    content_type: 'Reel',
-                    internal_title: 'Nueva pieza',
-                    status: 'idea',
-                    grid_position: feed.length + 1,
-                    public_title: '',
-                    pillar: '',
-                    objective: '',
-                    hook: '',
-                    copy_base: '',
-                    script: '',
-                    cta: '',
-                    shotlist: '',
-                    format: '',
-                    reference_links: [],
-                    internal_notes: '',
-                    client_comments: '',
-                    is_extra: false,
-                  })
-                }
-              >
-                Agregar pieza
-              </Button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button
+                  onClick={() => generateGridSuggestionMutation.mutate()}
+                  disabled={generateGridSuggestionMutation.isPending}
+                >
+                  Sugerir grid por paquete
+                </Button>
+                <Button
+                  className="btn-primary"
+                  onClick={() =>
+                    addFeedMutation.mutate({
+                      campaign_id: campaign.id,
+                      content_type: 'Reel',
+                      internal_title: 'Nueva pieza',
+                      status: 'idea',
+                      grid_position: feed.length + 1,
+                      public_title: '',
+                      pillar: '',
+                      objective: '',
+                      hook: '',
+                      copy_base: '',
+                      script: '',
+                      cta: '',
+                      shotlist: '',
+                      format: '',
+                      reference_links: [],
+                      internal_notes: '',
+                      client_comments: '',
+                      is_extra: false,
+                    })
+                  }
+                >
+                  Agregar pieza
+                </Button>
+              </div>
             </div>
+
+            {latestGridSuggestion ? (
+              <Card style={{ margin: '10px 0 12px' }}>
+                <div className="between">
+                  <h3 style={{ marginBottom: 0 }}>Sugerencia por paquete</h3>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button onClick={() => setSelectedSlots(latestSlots.map((_, index) => index))}>Seleccionar todo</Button>
+                    <Button
+                      className="btn-primary"
+                      onClick={() => applyGridSuggestionMutation.mutate()}
+                      disabled={applyGridSuggestionMutation.isPending}
+                    >
+                      Insertar seleccionados
+                    </Button>
+                  </div>
+                </div>
+                {latestSlots.length ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th>Tipo</th>
+                          <th>Tema</th>
+                          <th>Pilar</th>
+                          <th>Hook</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {latestSlots.map((slot, index) => {
+                          const row = slot as Record<string, unknown>;
+                          const checked = selectedSlots.includes(index);
+                          return (
+                            <tr key={index}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedSlots((state) =>
+                                      checked ? state.filter((slotIndex) => slotIndex !== index) : [...state, index],
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>{String(row.type ?? 'Post')}</td>
+                              <td>{String(row.theme ?? 'Tema sugerido')}</td>
+                              <td>{String(row.pillar ?? '—')}</td>
+                              <td>{String(row.hook ?? '—')}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted">No hay faltantes de paquete para sugerencia.</p>
+                )}
+              </Card>
+            ) : null}
 
             {feed.length === 0 ? (
               <EmptyState label="No hay piezas en esta campaña mensual." />

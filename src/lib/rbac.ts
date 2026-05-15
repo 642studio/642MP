@@ -21,3 +21,9 @@ export const canEditProduction = (role: AppRole) =>
 
 export const canManageRider = (role: AppRole) =>
   ['admin', 'direccion', 'community', 'produccion', 'fotografia'].includes(role);
+
+export const canManageClients = (role: AppRole) =>
+  ['admin', 'direccion', 'community'].includes(role);
+
+export const canManagePackages = (role: AppRole) =>
+  ['admin', 'direccion'].includes(role);

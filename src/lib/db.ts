@@ -1,13 +1,18 @@
 import { requireSupabase } from './supabase';
 import type {
-  FeedItem,
+  AIResearchReport,
   Client,
-  PackageItem,
+  ClientAccountSnapshot,
+  FeedItem,
   MonthlyCampaign,
+  MonthlyGridSuggestion,
   ObjectiveGeneral,
+  PackageItem,
   ProductionSession,
   Rider,
   SemesterPlan,
+  ServiceContract,
+  StrategyPrefillPayload,
 } from '../types/domain';
 
 const ensure = <T>(data: T | null, error: { message: string } | null): T => {
@@ -15,6 +20,12 @@ const ensure = <T>(data: T | null, error: { message: string } | null): T => {
   if (data === null) throw new Error('No se encontró información.');
   return data;
 };
+
+const toString = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' ? value : fallback;
+
+const toArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
 
 export const profileApi = {
   async getMine() {
@@ -37,19 +48,155 @@ export const clientApi = {
     const { data, error } = await sb.from('clients').select('*').order('name');
     return ensure(data, error) as Client[];
   },
+  async get(id: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('clients').select('*').eq('id', id).single();
+    return ensure(data, error) as Client;
+  },
+  async create(payload: Partial<Client>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('clients').insert(payload).select('*').single();
+    return ensure(data, error) as Client;
+  },
+  async update(id: string, payload: Partial<Client>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('clients').update(payload).eq('id', id).select('*').single();
+    return ensure(data, error) as Client;
+  },
 };
 
 export const packageApi = {
-  async list() {
+  async list(activeOnly = true) {
     const sb = requireSupabase();
-    const { data, error } = await sb.from('packages').select('*, package_items(*)').eq('is_active', true).order('name');
+    let query = sb.from('packages').select('*, package_items(*)').order('name');
+    if (activeOnly) query = query.eq('is_active', true);
+    const { data, error } = await query;
     return ensure(data, error) as Array<{
       id: string;
       name: string;
       price: number;
       description: string | null;
+      is_active: boolean;
       package_items: PackageItem[];
     }>;
+  },
+  async create(payload: { name: string; price: number; description?: string }) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('packages')
+      .insert({ ...payload, is_active: true })
+      .select('*')
+      .single();
+    return ensure(data, error) as {
+      id: string;
+      name: string;
+      price: number;
+      description: string | null;
+      is_active: boolean;
+    };
+  },
+  async update(id: string, payload: { name?: string; price?: number; description?: string; is_active?: boolean }) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('packages').update(payload).eq('id', id).select('*').single();
+    return ensure(data, error);
+  },
+  async addItem(payload: Partial<PackageItem>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('package_items').insert(payload).select('*').single();
+    return ensure(data, error) as PackageItem;
+  },
+  async updateItem(id: string, payload: Partial<PackageItem>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('package_items').update(payload).eq('id', id).select('*').single();
+    return ensure(data, error) as PackageItem;
+  },
+  async deleteItem(id: string) {
+    const sb = requireSupabase();
+    const { error } = await sb.from('package_items').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  },
+};
+
+export const serviceContractApi = {
+  async listByClient(clientId: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('service_contracts')
+      .select('*, packages(name)')
+      .eq('client_id', clientId)
+      .order('start_date', { ascending: false });
+    return ensure(data, error) as Array<ServiceContract & { packages: { name: string } | null }>;
+  },
+  async getActiveForClient(clientId: string, forDate: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('service_contracts')
+      .select('*, packages(name)')
+      .eq('client_id', clientId)
+      .eq('status', 'active')
+      .lte('start_date', forDate)
+      .or(`end_date.is.null,end_date.gte.${forDate}`)
+      .order('start_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data as (ServiceContract & { packages: { name: string } | null }) | null;
+  },
+  async upsertActive(payload: {
+    client_id: string;
+    package_id: string;
+    start_date: string;
+    end_date?: string | null;
+    monthly_price?: number;
+    payment_status?: string;
+    notes?: string;
+  }) {
+    const sb = requireSupabase();
+
+    const { data: existing, error: findError } = await sb
+      .from('service_contracts')
+      .select('*')
+      .eq('client_id', payload.client_id)
+      .eq('status', 'active')
+      .order('start_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (findError) throw new Error(findError.message);
+
+    if (existing) {
+      const { data, error } = await sb
+        .from('service_contracts')
+        .update({
+          package_id: payload.package_id,
+          start_date: payload.start_date,
+          end_date: payload.end_date ?? null,
+          monthly_price: payload.monthly_price ?? existing.monthly_price ?? 0,
+          payment_status: payload.payment_status ?? existing.payment_status ?? 'pending',
+          notes: payload.notes ?? existing.notes ?? null,
+        })
+        .eq('id', existing.id)
+        .select('*')
+        .single();
+      return ensure(data, error) as ServiceContract;
+    }
+
+    const { data, error } = await sb
+      .from('service_contracts')
+      .insert({
+        client_id: payload.client_id,
+        package_id: payload.package_id,
+        start_date: payload.start_date,
+        end_date: payload.end_date ?? null,
+        monthly_price: payload.monthly_price ?? 0,
+        payment_status: payload.payment_status ?? 'pending',
+        status: 'active',
+        notes: payload.notes ?? null,
+      })
+      .select('*')
+      .single();
+
+    return ensure(data, error) as ServiceContract;
   },
 };
 
@@ -234,5 +381,249 @@ export const settingsApi = {
       .select('*')
       .single();
     return ensure(data, error);
+  },
+  async getMap() {
+    const settings = await settingsApi.list();
+    return new Map(settings.map((item) => [item.key, item.value]));
+  },
+};
+
+export const snapshotApi = {
+  async listByClient(clientId: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('client_account_snapshots')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('captured_at', { ascending: false });
+    return ensure(data, error) as ClientAccountSnapshot[];
+  },
+  async create(payload: Partial<ClientAccountSnapshot>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('client_account_snapshots').insert(payload).select('*').single();
+    return ensure(data, error) as ClientAccountSnapshot;
+  },
+  async update(id: string, payload: Partial<ClientAccountSnapshot>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('client_account_snapshots')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+    return ensure(data, error) as ClientAccountSnapshot;
+  },
+};
+
+export const researchApi = {
+  async listByClient(clientId: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('ai_research_reports')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false });
+    return ensure(data, error) as AIResearchReport[];
+  },
+  async get(id: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('ai_research_reports').select('*').eq('id', id).single();
+    return ensure(data, error) as AIResearchReport;
+  },
+  async generateContext(payload: {
+    client_id: string;
+    snapshot_id: string;
+    scope?: 'local_global';
+    local_limit?: number;
+    global_limit?: number;
+  }) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.functions.invoke('research-client-context', {
+      body: {
+        scope: 'local_global',
+        local_limit: 10,
+        global_limit: 10,
+        ...payload,
+      },
+    });
+    return ensure(data, error) as { mode: string; report: AIResearchReport; message?: string };
+  },
+  async generateDiagnostic(payload: {
+    client_id: string;
+    snapshot_id: string;
+    research_report_id: string;
+  }) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.functions.invoke('generate-account-diagnostic', {
+      body: payload,
+    });
+    return ensure(data, error) as { mode: string; report: AIResearchReport; message?: string };
+  },
+  async updateDiagnostic(id: string, diagnostic_json: Record<string, unknown>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('ai_research_reports')
+      .update({ diagnostic_json, status: 'ready' })
+      .eq('id', id)
+      .select('*')
+      .single();
+    return ensure(data, error) as AIResearchReport;
+  },
+  async updateResearch(id: string, research_json: Record<string, unknown>) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('ai_research_reports')
+      .update({ research_json })
+      .eq('id', id)
+      .select('*')
+      .single();
+    return ensure(data, error) as AIResearchReport;
+  },
+  async setStatus(id: string, status: AIResearchReport['status']) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('ai_research_reports').update({ status }).eq('id', id).select('*').single();
+    return ensure(data, error) as AIResearchReport;
+  },
+};
+
+export const strategyPrefillApi = {
+  async listByClient(clientId: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('strategy_prefill_payloads')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false });
+    return ensure(data, error) as StrategyPrefillPayload[];
+  },
+  async listAll() {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('strategy_prefill_payloads')
+      .select('*, clients(name), ai_research_reports(status)')
+      .order('created_at', { ascending: false });
+    return ensure(data, error) as Array<
+      StrategyPrefillPayload & {
+        clients: { name: string } | null;
+        ai_research_reports: { status: string } | null;
+      }
+    >;
+  },
+  async generate(payload: { client_id: string; report_id: string }) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.functions.invoke('generate-strategy-prefill', {
+      body: payload,
+    });
+    return ensure(data, error) as { mode: string; prefill: StrategyPrefillPayload; message?: string };
+  },
+  async get(id: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.from('strategy_prefill_payloads').select('*').eq('id', id).single();
+    return ensure(data, error) as StrategyPrefillPayload;
+  },
+  async apply(prefillId: string) {
+    const sb = requireSupabase();
+    const prefill = await strategyPrefillApi.get(prefillId);
+
+    const objectivePayload = prefill.objective_payload_json ?? {};
+    const semesterPayload = prefill.semester_payload_json ?? {};
+    const campaignPayload = prefill.monthly_campaign_payload_json ?? {};
+
+    const { data: objective, error: objectiveError } = await sb
+      .from('objective_generals')
+      .insert({
+        client_id: prefill.client_id,
+        title: toString(objectivePayload.title, 'Objetivo General'),
+        business_goal: toString(objectivePayload.business_goal, 'Definir objetivo de negocio'),
+        primary_kpi: toString(objectivePayload.primary_kpi, 'KPI principal'),
+        target_value: toString(objectivePayload.target_value, 'Definir meta'),
+        start_date: toString(objectivePayload.start_date, new Date().toISOString().slice(0, 10)),
+        end_date: toString(objectivePayload.end_date, new Date().toISOString().slice(0, 10)),
+        status: toString(objectivePayload.status, 'draft'),
+      })
+      .select('*')
+      .single();
+
+    if (objectiveError) throw new Error(objectiveError.message);
+
+    const { data: semester, error: semesterError } = await sb
+      .from('semester_plans')
+      .insert({
+        objective_general_id: objective.id,
+        name: toString(semesterPayload.name, 'Plan Semestral'),
+        start_date: toString(semesterPayload.start_date, objective.start_date),
+        end_date: toString(semesterPayload.end_date, objective.end_date),
+        strategic_focus: toString(semesterPayload.strategic_focus, 'Definir enfoque'),
+        pillars: toArray(semesterPayload.pillars),
+        risks: toArray(semesterPayload.risks),
+        status: toString(semesterPayload.status, 'draft'),
+      })
+      .select('*')
+      .single();
+
+    if (semesterError) throw new Error(semesterError.message);
+
+    const { data: campaign, error: campaignError } = await sb
+      .from('monthly_campaigns')
+      .insert({
+        objective_general_id: objective.id,
+        semester_plan_id: semester.id,
+        client_id: prefill.client_id,
+        month_date: toString(campaignPayload.month_date, semester.start_date),
+        name: toString(campaignPayload.name, 'Campaña mensual'),
+        monthly_goal: toString(campaignPayload.monthly_goal, 'Definir objetivo mensual'),
+        audience: toString(campaignPayload.audience, 'Definir audiencia'),
+        tone: toString(campaignPayload.tone, 'Definir tono'),
+        cta: toString(campaignPayload.cta, 'Definir CTA'),
+        promotion: toString(campaignPayload.promotion, ''),
+        status: toString(campaignPayload.status, 'brief'),
+      })
+      .select('*')
+      .single();
+
+    if (campaignError) throw new Error(campaignError.message);
+
+    const { error: prefillUpdateError } = await sb
+      .from('strategy_prefill_payloads')
+      .update({ status: 'applied' })
+      .eq('id', prefill.id);
+
+    if (prefillUpdateError) throw new Error(prefillUpdateError.message);
+
+    return {
+      objective,
+      semester,
+      campaign,
+    };
+  },
+};
+
+export const gridSuggestionApi = {
+  async listByCampaign(campaignId: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from('monthly_grid_suggestions')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: false });
+    return ensure(data, error) as MonthlyGridSuggestion[];
+  },
+  async generate(campaign_id: string) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.functions.invoke('generate-package-grid-suggestions', {
+      body: { campaign_id },
+    });
+    return ensure(data, error) as { mode: string; suggestion: MonthlyGridSuggestion; message?: string };
+  },
+  async apply(campaign_id: string, selected_slots: number[]) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.functions.invoke('apply-grid-suggestions', {
+      body: { campaign_id, selected_slots },
+    });
+    return ensure(data, error) as {
+      inserted: number;
+      skipped: number;
+      message?: string;
+    };
   },
 };
