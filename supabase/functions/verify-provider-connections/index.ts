@@ -84,7 +84,7 @@ const verifyOpenAI = async (apiKey: string, model: string): Promise<ProviderStat
         body: JSON.stringify({
           model,
           input: 'Responde únicamente: ok',
-          max_output_tokens: 8,
+          max_output_tokens: 16,
         }),
       },
       12000,
