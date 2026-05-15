@@ -131,32 +131,69 @@ export const clientApi = {
   async create(payload: Partial<Client>) {
     const sb = requireSupabase();
     let nextPayload = sanitizePayload(payload as Record<string, unknown>);
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    const maxAttempts = Math.max(Object.keys(nextPayload).length + 2, 8);
+    const droppedColumns: string[] = [];
+    let lastError: string | null = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const { data, error } = await sb.from('clients').insert(nextPayload).select('*').single();
       if (!error) return ensure(data, null) as Client;
+      lastError = error.message;
       const missingColumn = parseMissingColumn(error.message);
       if (!missingColumn || !(missingColumn in nextPayload)) {
         throw new Error(error.message);
       }
       const { [missingColumn]: _dropped, ...rest } = nextPayload;
       nextPayload = rest;
+      droppedColumns.push(missingColumn);
     }
-    throw new Error('No se pudo crear el cliente por incompatibilidad de columnas.');
+
+    const droppedHint =
+      droppedColumns.length > 0
+        ? ` Columnas ignoradas automáticamente: ${Array.from(new Set(droppedColumns)).join(', ')}.`
+        : '';
+    throw new Error(
+      `No se pudo crear el cliente por incompatibilidad de columnas.${droppedHint} ${
+        lastError ? `Último error: ${lastError}` : ''
+      }`.trim(),
+    );
   },
   async update(id: string, payload: Partial<Client>) {
     const sb = requireSupabase();
     let nextPayload = sanitizePayload(payload as Record<string, unknown>);
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (Object.keys(nextPayload).length === 0) {
+      return clientApi.get(id);
+    }
+
+    const maxAttempts = Math.max(Object.keys(nextPayload).length + 2, 8);
+    const droppedColumns: string[] = [];
+    let lastError: string | null = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (Object.keys(nextPayload).length === 0) {
+        return clientApi.get(id);
+      }
       const { data, error } = await sb.from('clients').update(nextPayload).eq('id', id).select('*').single();
       if (!error) return ensure(data, null) as Client;
+      lastError = error.message;
       const missingColumn = parseMissingColumn(error.message);
       if (!missingColumn || !(missingColumn in nextPayload)) {
         throw new Error(error.message);
       }
       const { [missingColumn]: _dropped, ...rest } = nextPayload;
       nextPayload = rest;
+      droppedColumns.push(missingColumn);
     }
-    throw new Error('No se pudo actualizar el cliente por incompatibilidad de columnas.');
+
+    const droppedHint =
+      droppedColumns.length > 0
+        ? ` Columnas ignoradas automáticamente: ${Array.from(new Set(droppedColumns)).join(', ')}.`
+        : '';
+    throw new Error(
+      `No se pudo actualizar el cliente por incompatibilidad de columnas.${droppedHint} ${
+        lastError ? `Último error: ${lastError}` : ''
+      }`.trim(),
+    );
   },
 };
 
