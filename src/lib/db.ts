@@ -4,6 +4,7 @@ import type {
   Client,
   ClientAccountSnapshot,
   ConnectionsVerificationResult,
+  Profile,
   FeedItem,
   MonthlyCampaign,
   MonthlyGridSuggestion,
@@ -29,6 +30,16 @@ const normalizeSettingsError = (message: string) => {
   return message;
 };
 
+const normalizeFunctionError = (message: string) => {
+  if (message.toLowerCase().includes('failed to send a request to the edge function')) {
+    return 'No se pudo alcanzar la Edge Function. Verifica deploy de `verify-provider-connections` y que el proyecto Supabase sea el correcto.';
+  }
+  if (message.toLowerCase().includes('functionshttperror')) {
+    return 'La Edge Function respondió con error. Revisa logs de Supabase Functions para `verify-provider-connections`.';
+  }
+  return message;
+};
+
 const toString = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
 
@@ -45,8 +56,29 @@ export const profileApi = {
     if (authError) throw new Error(authError.message);
     if (!user) return null;
 
-    const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
-    return ensure(data, error);
+    const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+
+    const raw = data as Record<string, unknown>;
+    const safeName =
+      (typeof raw.name === 'string' && raw.name.trim()) ||
+      (typeof raw.full_name === 'string' && raw.full_name.trim()) ||
+      (typeof raw.username === 'string' && raw.username.trim()) ||
+      user.email?.split('@')[0] ||
+      'Usuario';
+
+    const safeRole = typeof raw.role === 'string' ? raw.role : 'readonly';
+    const now = new Date().toISOString();
+
+    return {
+      id: user.id,
+      name: safeName,
+      role: safeRole,
+      active: typeof raw.active === 'boolean' ? raw.active : true,
+      created_at: typeof raw.created_at === 'string' ? raw.created_at : now,
+      updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : now,
+    } as Profile;
   },
 };
 
@@ -407,7 +439,9 @@ export const settingsApi = {
     const { data, error } = await sb.functions.invoke('verify-provider-connections', {
       body: payload,
     });
-    return ensure(data, error) as ConnectionsVerificationResult;
+    if (error) throw new Error(normalizeFunctionError(error.message));
+    if (!data) throw new Error('La verificación no devolvió datos.');
+    return data as ConnectionsVerificationResult;
   },
 };
 

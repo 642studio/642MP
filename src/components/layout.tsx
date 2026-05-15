@@ -21,19 +21,47 @@ export const AppLayout = () => {
   const navigate = useNavigate();
   const userId = session?.user.id ?? '';
   const userEmail = session?.user.email ?? '';
-  const escapedName = (session?.user.user_metadata?.name as string | undefined)?.replaceAll("'", "''") ?? '';
+  const rawName = ((session?.user.user_metadata?.name as string | undefined)?.trim() || userEmail.split('@')[0] || 'usuario');
+  const escapedName = rawName.replaceAll("'", "''");
   const profileUpsertSql = userId
-    ? `insert into public.profiles(id, name, role, active)
-values (
-  '${userId}',
-  '${escapedName || userEmail.split('@')[0] || 'usuario'}',
-  'admin',
-  true
-)
-on conflict (id)
-do update set
-  role = 'admin',
-  active = true;`
+    ? `do $$
+declare
+  has_name boolean;
+  has_full_name boolean;
+begin
+  select exists(
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'profiles'
+      and column_name = 'name'
+  ) into has_name;
+
+  select exists(
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'profiles'
+      and column_name = 'full_name'
+  ) into has_full_name;
+
+  if has_name then
+    insert into public.profiles(id, name, role, active)
+    values ('${userId}', '${escapedName}', 'admin', true)
+    on conflict (id)
+    do update set role = 'admin', active = true;
+  elsif has_full_name then
+    insert into public.profiles(id, full_name, role, active)
+    values ('${userId}', '${escapedName}', 'admin', true)
+    on conflict (id)
+    do update set role = 'admin', active = true;
+  else
+    insert into public.profiles(id, role, active)
+    values ('${userId}', 'admin', true)
+    on conflict (id)
+    do update set role = 'admin', active = true;
+  end if;
+end $$;`
     : '';
 
   return (
