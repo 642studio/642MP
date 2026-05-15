@@ -3,6 +3,7 @@ import type {
   AIResearchReport,
   Client,
   ClientAccountSnapshot,
+  ConnectionsVerificationResult,
   FeedItem,
   MonthlyCampaign,
   MonthlyGridSuggestion,
@@ -396,6 +397,17 @@ export const settingsApi = {
   async getMap() {
     const settings = await settingsApi.list();
     return new Map(settings.map((item) => [item.key, item.value]));
+  },
+  async verifyConnections(payload: {
+    openai_key: string;
+    serper_api_key: string;
+    ai_model: string;
+  }) {
+    const sb = requireSupabase();
+    const { data, error } = await sb.functions.invoke('verify-provider-connections', {
+      body: payload,
+    });
+    return ensure(data, error) as ConnectionsVerificationResult;
   },
 };
 

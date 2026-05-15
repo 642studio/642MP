@@ -297,3 +297,15 @@ export interface MonthlyGridSuggestion {
   created_by: string | null;
   created_at: string;
 }
+
+export interface ProviderConnectionStatus {
+  ok: boolean;
+  message: string;
+}
+
+export interface ConnectionsVerificationResult {
+  supabase: ProviderConnectionStatus;
+  openai: ProviderConnectionStatus;
+  serper: ProviderConnectionStatus;
+  tested_at: string;
+}

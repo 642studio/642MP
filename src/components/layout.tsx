@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import logoWhite from '../assets/642-logo-white.png';
+import { Button, Card } from './ui';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -15,9 +16,25 @@ const navItems = [
 ];
 
 export const AppLayout = () => {
-  const { profile, signOut } = useAuth();
-  const { toast } = useToast();
+  const { profile, session, refreshProfile, signOut } = useAuth();
+  const { toast, showToast } = useToast();
   const navigate = useNavigate();
+  const userId = session?.user.id ?? '';
+  const userEmail = session?.user.email ?? '';
+  const escapedName = (session?.user.user_metadata?.name as string | undefined)?.replaceAll("'", "''") ?? '';
+  const profileUpsertSql = userId
+    ? `insert into public.profiles(id, name, role, active)
+values (
+  '${userId}',
+  '${escapedName || userEmail.split('@')[0] || 'usuario'}',
+  'admin',
+  true
+)
+on conflict (id)
+do update set
+  role = 'admin',
+  active = true;`
+    : '';
 
   return (
     <div className="shell">
@@ -57,6 +74,52 @@ export const AppLayout = () => {
 
       <main className="main">
         {toast ? <div className={`toast toast-${toast.tone}`}>{toast.message}</div> : null}
+        {!profile && session ? (
+          <Card className="access-alert">
+            <div className="between">
+              <div>
+                <h3>Acceso pendiente de rol</h3>
+                <p className="muted">
+                  Tu sesión está activa, pero no existe perfil con rol en `public.profiles`.
+                </p>
+                <p className="muted" style={{ marginTop: 8 }}>
+                  user_id: <code>{userId}</code>
+                  <br />
+                  email: <code>{userEmail}</code>
+                </p>
+              </div>
+              <div className="inline-actions">
+                <Button
+                  onClick={async () => {
+                    await refreshProfile();
+                    showToast('Perfil recargado desde Supabase.', 'info');
+                  }}
+                >
+                  Reintentar perfil
+                </Button>
+                <Button
+                  className="btn-primary"
+                  onClick={async () => {
+                    if (!profileUpsertSql) return;
+                    try {
+                      await navigator.clipboard.writeText(profileUpsertSql);
+                      showToast('SQL copiado. Ejecútalo en Supabase SQL Editor.', 'ok');
+                    } catch {
+                      showToast('No se pudo copiar al portapapeles.', 'error');
+                    }
+                  }}
+                >
+                  Copiar SQL admin
+                </Button>
+              </div>
+            </div>
+            {profileUpsertSql ? (
+              <pre className="json-preview" style={{ marginTop: 12 }}>
+                {profileUpsertSql}
+              </pre>
+            ) : null}
+          </Card>
+        ) : null}
         <Outlet />
       </main>
     </div>

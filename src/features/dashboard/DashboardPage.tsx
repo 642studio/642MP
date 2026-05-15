@@ -11,7 +11,16 @@ export const DashboardPage = () => {
   const semesterQuery = useQuery({ queryKey: ['semester-plans'], queryFn: () => semesterApi.list() });
   const ridersQuery = useQuery({ queryKey: ['riders'], queryFn: riderApi.list });
 
-  const loading = campaignsQuery.isLoading || objectivesQuery.isLoading || semesterQuery.isLoading || ridersQuery.isLoading;
+  const initialLoading =
+    (campaignsQuery.isPending && !campaignsQuery.data) ||
+    (objectivesQuery.isPending && !objectivesQuery.data) ||
+    (semesterQuery.isPending && !semesterQuery.data) ||
+    (ridersQuery.isPending && !ridersQuery.data);
+  const refreshing =
+    campaignsQuery.isFetching ||
+    objectivesQuery.isFetching ||
+    semesterQuery.isFetching ||
+    ridersQuery.isFetching;
 
   const attention = useMemo(() => {
     const campaigns = campaignsQuery.data ?? [];
@@ -32,7 +41,7 @@ export const DashboardPage = () => {
     ];
   }, [campaignsQuery.data, ridersQuery.data]);
 
-  if (loading) return <LoadingState label="Cargando dashboard operativo..." />;
+  if (initialLoading) return <LoadingState label="Cargando dashboard operativo..." />;
 
   const objectives = objectivesQuery.data ?? [];
   const semesters = semesterQuery.data ?? [];
@@ -46,6 +55,7 @@ export const DashboardPage = () => {
         subtitle="Estado diario de objetivos, planes semestrales, campañas mensuales y producción."
         actions={<Link className="btn btn-primary" to="/strategy">Crear estrategia</Link>}
       />
+      {refreshing ? <p className="refresh-hint">Actualizando datos...</p> : null}
 
       <div className="grid-4">
         <Kpi label="Objetivos generales" value={objectives.length} helper="Nivel cliente/servicio" />
@@ -100,6 +110,13 @@ export const DashboardPage = () => {
                     </td>
                   </tr>
                 ))}
+                {campaigns.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      Sin campañas registradas.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -131,6 +148,13 @@ export const DashboardPage = () => {
                   <td>{formatDate(campaign.updated_at)}</td>
                 </tr>
               ))}
+              {campaigns.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    Aún no hay trazabilidad para mostrar.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

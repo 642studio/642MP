@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { settingsApi } from '../../lib/db';
 import { Button, Card, Field, Input, LoadingState, PageHeader, Select } from '../../components/ui';
 import { useToast } from '../../contexts/ToastContext';
+import type { ConnectionsVerificationResult, ProviderConnectionStatus } from '../../types/domain';
 
 interface FormValues {
   openai_key: string;
@@ -14,6 +15,7 @@ interface FormValues {
 export const SettingsPage = () => {
   const { showToast } = useToast();
   const qc = useQueryClient();
+  const [verification, setVerification] = useState<ConnectionsVerificationResult | null>(null);
 
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: settingsApi.list });
 
@@ -50,6 +52,24 @@ export const SettingsPage = () => {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
+  const verifyMutation = useMutation({
+    mutationFn: async () =>
+      settingsApi.verifyConnections({
+        openai_key: form.getValues('openai_key'),
+        serper_api_key: form.getValues('serper_api_key'),
+        ai_model: form.getValues('ai_model'),
+      }),
+    onSuccess: (result) => {
+      setVerification(result);
+      const allOk = result.supabase.ok && result.openai.ok && result.serper.ok;
+      showToast(allOk ? 'Conexión verificada en todos los proveedores.' : 'Verificación completada con observaciones.', allOk ? 'ok' : 'info');
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
+  });
+
+  const statusTone = (status: ProviderConnectionStatus | null | undefined) =>
+    !status ? 'muted' : status.ok ? 'ok' : 'error';
+
   if (settingsQuery.isError) {
     const message = settingsQuery.error instanceof Error ? settingsQuery.error.message : 'Error de configuración';
     return (
@@ -81,14 +101,39 @@ export const SettingsPage = () => {
       />
 
       <Card>
-        <div className="grid-2" style={{ marginBottom: 14 }}>
+        <div className="grid-3" style={{ marginBottom: 14 }}>
           <Card>
             <h3>Estado OpenAI</h3>
             <p className="muted">{form.watch('openai_key') ? 'Conectado (key configurada)' : 'No configurado'}</p>
+            <p className={`status-line ${statusTone(verification?.openai)}`}>
+              {verifyMutation.isPending
+                ? 'Probando conexión...'
+                : verification?.openai
+                  ? verification.openai.message
+                  : 'Sin prueba ejecutada.'}
+            </p>
           </Card>
           <Card>
             <h3>Estado Serper</h3>
             <p className="muted">{form.watch('serper_api_key') ? 'Conectado (key configurada)' : 'No configurado'}</p>
+            <p className={`status-line ${statusTone(verification?.serper)}`}>
+              {verifyMutation.isPending
+                ? 'Probando conexión...'
+                : verification?.serper
+                  ? verification.serper.message
+                  : 'Sin prueba ejecutada.'}
+            </p>
+          </Card>
+          <Card>
+            <h3>Estado Supabase</h3>
+            <p className="muted">Verificación de sesión + lectura autenticada.</p>
+            <p className={`status-line ${statusTone(verification?.supabase)}`}>
+              {verifyMutation.isPending
+                ? 'Probando conexión...'
+                : verification?.supabase
+                  ? verification.supabase.message
+                  : 'Sin prueba ejecutada.'}
+            </p>
           </Card>
         </div>
 
@@ -109,9 +154,23 @@ export const SettingsPage = () => {
             </Select>
           </Field>
 
-          <Button type="submit" className="btn-primary" disabled={saveMutation.isPending}>
-            Guardar cambios
-          </Button>
+          <div className="inline-actions">
+            <Button type="submit" className="btn-primary" disabled={saveMutation.isPending}>
+              Guardar cambios
+            </Button>
+            <Button
+              type="button"
+              onClick={() => verifyMutation.mutate()}
+              disabled={verifyMutation.isPending}
+            >
+              {verifyMutation.isPending ? 'Verificando...' : 'Verificar conexión'}
+            </Button>
+          </div>
+          {verification ? (
+            <p className="muted" style={{ marginTop: 10 }}>
+              Última verificación: {new Date(verification.tested_at).toLocaleString('es-MX')}
+            </p>
+          ) : null}
         </form>
       </Card>
     </section>

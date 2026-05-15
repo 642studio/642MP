@@ -44,3 +44,6 @@ verify_jwt = true
 
 [functions.apply-grid-suggestions]
 verify_jwt = true
+
+[functions.verify-provider-connections]
+verify_jwt = true

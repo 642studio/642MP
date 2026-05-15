@@ -91,7 +91,10 @@ const ClientsListPage = () => {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
-  if (clientsQuery.isLoading) return <LoadingState label="Cargando clientes..." />;
+  const initialLoading = clientsQuery.isPending && !clientsQuery.data;
+  const refreshing = clientsQuery.isFetching;
+
+  if (initialLoading) return <LoadingState label="Cargando clientes..." />;
 
   const clients = clientsQuery.data ?? [];
 
@@ -116,6 +119,7 @@ const ClientsListPage = () => {
         title="Clientes"
         subtitle="Registro, contexto estratégico y diagnóstico operativo por cliente."
       />
+      {refreshing ? <p className="refresh-hint">Actualizando clientes...</p> : null}
 
       <div className="grid-2">
         <Card>
@@ -182,6 +186,13 @@ const ClientsListPage = () => {
                     </td>
                   </tr>
                 ))}
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      No hay clientes con estos filtros.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -389,7 +400,22 @@ const ClientProfilePage = ({ clientId }: { clientId: string }) => {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
-  if (clientQuery.isLoading || snapshotsQuery.isLoading || reportsQuery.isLoading || prefillQuery.isLoading || packageQuery.isLoading || contractsQuery.isLoading) {
+  const initialLoading =
+    (clientQuery.isPending && !clientQuery.data) ||
+    (snapshotsQuery.isPending && !snapshotsQuery.data) ||
+    (reportsQuery.isPending && !reportsQuery.data) ||
+    (prefillQuery.isPending && !prefillQuery.data) ||
+    (packageQuery.isPending && !packageQuery.data) ||
+    (contractsQuery.isPending && !contractsQuery.data);
+  const refreshing =
+    clientQuery.isFetching ||
+    snapshotsQuery.isFetching ||
+    reportsQuery.isFetching ||
+    prefillQuery.isFetching ||
+    packageQuery.isFetching ||
+    contractsQuery.isFetching;
+
+  if (initialLoading) {
     return <LoadingState label="Cargando perfil de cliente..." />;
   }
 
@@ -417,6 +443,7 @@ const ClientProfilePage = ({ clientId }: { clientId: string }) => {
           </>
         }
       />
+      {refreshing ? <p className="refresh-hint">Actualizando perfil...</p> : null}
 
       <div className="grid-2">
         <Card>
@@ -541,6 +568,13 @@ const ClientProfilePage = ({ clientId }: { clientId: string }) => {
                     <td>{item.posting_frequency ?? '—'}</td>
                   </tr>
                 ))}
+                {(snapshotsQuery.data ?? []).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      Sin snapshots capturados.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
