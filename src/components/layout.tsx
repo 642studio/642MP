@@ -28,6 +28,7 @@ export const AppLayout = () => {
 declare
   has_name boolean;
   has_full_name boolean;
+  has_active boolean;
 begin
   select exists(
     select 1
@@ -45,21 +46,44 @@ begin
       and column_name = 'full_name'
   ) into has_full_name;
 
-  if has_name then
+  select exists(
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'profiles'
+      and column_name = 'active'
+  ) into has_active;
+
+  if has_name and has_active then
     insert into public.profiles(id, name, role, active)
     values ('${userId}', '${escapedName}', 'admin', true)
     on conflict (id)
     do update set role = 'admin', active = true;
-  elsif has_full_name then
+  elsif has_name then
+    insert into public.profiles(id, name, role)
+    values ('${userId}', '${escapedName}', 'admin')
+    on conflict (id)
+    do update set role = 'admin';
+  elsif has_full_name and has_active then
     insert into public.profiles(id, full_name, role, active)
     values ('${userId}', '${escapedName}', 'admin', true)
     on conflict (id)
     do update set role = 'admin', active = true;
-  else
+  elsif has_full_name then
+    insert into public.profiles(id, full_name, role)
+    values ('${userId}', '${escapedName}', 'admin')
+    on conflict (id)
+    do update set role = 'admin';
+  elsif has_active then
     insert into public.profiles(id, role, active)
     values ('${userId}', 'admin', true)
     on conflict (id)
     do update set role = 'admin', active = true;
+  else
+    insert into public.profiles(id, role)
+    values ('${userId}', 'admin')
+    on conflict (id)
+    do update set role = 'admin';
   end if;
 end $$;`
     : '';
