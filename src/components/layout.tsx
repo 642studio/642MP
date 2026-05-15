@@ -26,10 +26,32 @@ export const AppLayout = () => {
   const profileUpsertSql = userId
     ? `do $$
 declare
+  has_id boolean;
+  has_user_id boolean;
   has_name boolean;
   has_full_name boolean;
   has_active boolean;
+  id_column text;
+  insert_cols text;
+  insert_vals text;
+  update_set text := 'role = ''admin''';
 begin
+  select exists(
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'profiles'
+      and column_name = 'id'
+  ) into has_id;
+
+  select exists(
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'profiles'
+      and column_name = 'user_id'
+  ) into has_user_id;
+
   select exists(
     select 1
     from information_schema.columns
@@ -54,37 +76,38 @@ begin
       and column_name = 'active'
   ) into has_active;
 
-  if has_name and has_active then
-    insert into public.profiles(id, name, role, active)
-    values ('${userId}', '${escapedName}', 'admin', true)
-    on conflict (id)
-    do update set role = 'admin', active = true;
-  elsif has_name then
-    insert into public.profiles(id, name, role)
-    values ('${userId}', '${escapedName}', 'admin')
-    on conflict (id)
-    do update set role = 'admin';
-  elsif has_full_name and has_active then
-    insert into public.profiles(id, full_name, role, active)
-    values ('${userId}', '${escapedName}', 'admin', true)
-    on conflict (id)
-    do update set role = 'admin', active = true;
-  elsif has_full_name then
-    insert into public.profiles(id, full_name, role)
-    values ('${userId}', '${escapedName}', 'admin')
-    on conflict (id)
-    do update set role = 'admin';
-  elsif has_active then
-    insert into public.profiles(id, role, active)
-    values ('${userId}', 'admin', true)
-    on conflict (id)
-    do update set role = 'admin', active = true;
+  if has_id then
+    id_column := 'id';
+  elsif has_user_id then
+    id_column := 'user_id';
   else
-    insert into public.profiles(id, role)
-    values ('${userId}', 'admin')
-    on conflict (id)
-    do update set role = 'admin';
+    raise exception 'La tabla public.profiles no tiene columna id ni user_id';
   end if;
+
+  insert_cols := id_column || ', role';
+  insert_vals := quote_literal('${userId}') || ', ''admin''';
+
+  if has_name then
+    insert_cols := insert_cols || ', name';
+    insert_vals := insert_vals || ', ' || quote_literal('${escapedName}');
+  elsif has_full_name then
+    insert_cols := insert_cols || ', full_name';
+    insert_vals := insert_vals || ', ' || quote_literal('${escapedName}');
+  end if;
+
+  if has_active then
+    insert_cols := insert_cols || ', active';
+    insert_vals := insert_vals || ', true';
+    update_set := update_set || ', active = true';
+  end if;
+
+  execute format(
+    'insert into public.profiles(%s) values (%s) on conflict (%I) do update set %s',
+    insert_cols,
+    insert_vals,
+    id_column,
+    update_set
+  );
 end $$;`
     : '';
 

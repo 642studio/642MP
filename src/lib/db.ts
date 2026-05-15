@@ -40,6 +40,19 @@ const normalizeFunctionError = (message: string) => {
   return message;
 };
 
+const parseMissingColumn = (message: string) => {
+  const schemaCacheMatch = message.match(/Could not find the '([^']+)' column/i);
+  if (schemaCacheMatch?.[1]) return schemaCacheMatch[1];
+  const postgresMatch = message.match(/column "([^"]+)" of relation/i);
+  if (postgresMatch?.[1]) return postgresMatch[1];
+  return null;
+};
+
+const sanitizePayload = <T extends Record<string, unknown>>(payload: T) => {
+  const entries = Object.entries(payload).filter(([, value]) => value !== undefined);
+  return Object.fromEntries(entries) as Partial<T>;
+};
+
 const toString = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
 
@@ -56,11 +69,33 @@ export const profileApi = {
     if (authError) throw new Error(authError.message);
     if (!user) return null;
 
-    const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!data) return null;
+    let data: Record<string, unknown> | null = null;
+    let errorMessage = '';
 
-    const raw = data as Record<string, unknown>;
+    const primaryLookup = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    if (primaryLookup.error) {
+      errorMessage = primaryLookup.error.message;
+    } else {
+      data = (primaryLookup.data as Record<string, unknown> | null) ?? null;
+    }
+
+    if (!data) {
+      const fallbackLookup = await sb.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+      if (!fallbackLookup.error && fallbackLookup.data) {
+        data = fallbackLookup.data as Record<string, unknown>;
+      } else if (fallbackLookup.error && !errorMessage) {
+        errorMessage = fallbackLookup.error.message;
+      }
+    }
+
+    if (!data) {
+      if (errorMessage && !errorMessage.includes('column "user_id" does not exist')) {
+        throw new Error(errorMessage);
+      }
+      return null;
+    }
+
+    const raw = data;
     const safeName =
       (typeof raw.name === 'string' && raw.name.trim()) ||
       (typeof raw.full_name === 'string' && raw.full_name.trim()) ||
@@ -95,13 +130,33 @@ export const clientApi = {
   },
   async create(payload: Partial<Client>) {
     const sb = requireSupabase();
-    const { data, error } = await sb.from('clients').insert(payload).select('*').single();
-    return ensure(data, error) as Client;
+    let nextPayload = sanitizePayload(payload as Record<string, unknown>);
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const { data, error } = await sb.from('clients').insert(nextPayload).select('*').single();
+      if (!error) return ensure(data, null) as Client;
+      const missingColumn = parseMissingColumn(error.message);
+      if (!missingColumn || !(missingColumn in nextPayload)) {
+        throw new Error(error.message);
+      }
+      const { [missingColumn]: _dropped, ...rest } = nextPayload;
+      nextPayload = rest;
+    }
+    throw new Error('No se pudo crear el cliente por incompatibilidad de columnas.');
   },
   async update(id: string, payload: Partial<Client>) {
     const sb = requireSupabase();
-    const { data, error } = await sb.from('clients').update(payload).eq('id', id).select('*').single();
-    return ensure(data, error) as Client;
+    let nextPayload = sanitizePayload(payload as Record<string, unknown>);
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const { data, error } = await sb.from('clients').update(nextPayload).eq('id', id).select('*').single();
+      if (!error) return ensure(data, null) as Client;
+      const missingColumn = parseMissingColumn(error.message);
+      if (!missingColumn || !(missingColumn in nextPayload)) {
+        throw new Error(error.message);
+      }
+      const { [missingColumn]: _dropped, ...rest } = nextPayload;
+      nextPayload = rest;
+    }
+    throw new Error('No se pudo actualizar el cliente por incompatibilidad de columnas.');
   },
 };
 
