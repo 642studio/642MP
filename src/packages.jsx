@@ -31,7 +31,7 @@ const Packages = ({go}) => {
 
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:14}}>
           {packages.filter(p=>p.active).map(p=><PackageCard key={p.id} p={p} onEdit={()=>setEditing(p)}/>)}
-          <button onClick={()=>setEditing({_new:true})} style={{border:'1.5px dashed var(--border)',borderRadius:var(--radius),background:'transparent',cursor:'pointer',display:'grid',placeItems:'center',minHeight:280,color:'var(--ink-3)'}}>
+          <button onClick={()=>setEditing({_new:true})} style={{border:'1.5px dashed var(--border)',borderRadius:'var(--radius)',background:'transparent',cursor:'pointer',display:'grid',placeItems:'center',minHeight:280,color:'var(--ink-3)'}}>
             <div style={{textAlign:'center'}}>
               <Icon.plus size={24}/>
               <div style={{marginTop:8,fontSize:13}}>Crear paquete</div>

@@ -37,9 +37,9 @@ const App = () => {
         {route.section==='feed'       && <Workspace go={go} route={{...route, view:'workspace', wsTab:'feed', client:route.client||'hollman'}}/>}
         {route.section==='production' && <Production go={go} route={route}/>}
         {route.section==='approvals'  && <Approvals go={go}/>}
-        {route.section==='riders'     && <RidersIndex go={go}/>}
-        {route.section==='reports'    && <ReportsIndex go={go}/>}
-        {route.section==='settings'   && <Settings/>}
+        {route.section==='riders'     && <RidersIndex go={go} route={route}/>}
+        {route.section==='reports'    && <ReportsIndex go={go} route={route}/>}
+        {route.section==='settings'   && <Settings route={route}/>}
 
         <DemoNav route={route} go={go} onLogout={handleLogout}/>
       </div>

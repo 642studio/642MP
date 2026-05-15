@@ -78,7 +78,7 @@ const Login = ({onEnter}) => {
               </div>
             )}
 
-            <button type="submit" className="btn lg primary" style={{width:'100%',justifyContent:'center',opacity:loading?.75:1}} disabled={loading}>
+            <button type="submit" className="btn lg primary" style={{width:'100%',justifyContent:'center',opacity:loading ? .75 : 1}} disabled={loading}>
               {loading ? 'Verificando…' : <><span>Entrar</span> <Icon.arrow size={14}/></>}
             </button>
           </form>

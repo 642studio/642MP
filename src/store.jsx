@@ -163,6 +163,7 @@ const getInitialState = () => ({
   sessions:  SEED_SESSIONS.map(s => ({...s})),
   approvals: SEED_APPROVALS.map(a => ({...a})),
   riders: [],
+  internalReports: [],
   settings: { ...DEFAULT_SETTINGS },
   users: DEFAULT_USERS.map(u => ({...u})),
 });
@@ -307,11 +308,46 @@ const A = {
   moveApproval(cardId, newCol) {
     store.setState(s => ({ ...s, approvals: s.approvals.map(c => c.id===cardId ? {...c, col:newCol} : c) }));
   },
+  updateApproval(cardId, data) {
+    store.setState(s => ({ ...s, approvals: s.approvals.map(c => c.id===cardId ? {...c, ...data} : c) }));
+  },
   addApproval(data) {
     store.setState(s => {
       const maxId = s.approvals.length ? Math.max(...s.approvals.map(x=>x.id)) : 0;
       return { ...s, approvals: [...s.approvals, {id:maxId+1, col:'internal_review', ...data}] };
     });
+  },
+
+  // Riders
+  createRider(data) {
+    const id = 'rider_' + Date.now();
+    const rider = {
+      id,
+      title: 'Rider de Producción',
+      status: 'draft',
+      content: {},
+      sentAt: null,
+      approvedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...data
+    };
+    store.setState(s => ({ ...s, riders: [...(s.riders||[]), rider] }));
+    return id;
+  },
+  updateRider(id, data) {
+    store.setState(s => ({
+      ...s,
+      riders: (s.riders||[]).map(r => r.id === id ? { ...r, ...data, updatedAt: new Date().toISOString() } : r)
+    }));
+  },
+
+  // Internal reports
+  createInternalReport(data) {
+    const id = 'report_' + Date.now();
+    const report = { id, createdAt: new Date().toISOString(), ...data };
+    store.setState(s => ({ ...s, internalReports: [...(s.internalReports||[]), report] }));
+    return id;
   },
 
   // Settings
