@@ -21,6 +21,13 @@ const ensure = <T>(data: T | null, error: { message: string } | null): T => {
   return data;
 };
 
+const normalizeSettingsError = (message: string) => {
+  if (message.includes("public.settings") && message.includes('schema cache')) {
+    return 'Falta la tabla `settings` en Supabase. Aplica las migraciones del proyecto y vuelve a intentar.';
+  }
+  return message;
+};
+
 const toString = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
 
@@ -366,7 +373,9 @@ export const settingsApi = {
   async list() {
     const sb = requireSupabase();
     const { data, error } = await sb.from('settings').select('*');
-    return ensure(data, error) as Array<{
+    if (error) throw new Error(normalizeSettingsError(error.message));
+    if (!data) throw new Error('No se encontró información.');
+    return data as Array<{
       id: string;
       key: string;
       value: string;
@@ -380,7 +389,9 @@ export const settingsApi = {
       .upsert({ key, value, encrypted }, { onConflict: 'key' })
       .select('*')
       .single();
-    return ensure(data, error);
+    if (error) throw new Error(normalizeSettingsError(error.message));
+    if (!data) throw new Error('No se pudo guardar la configuración.');
+    return data;
   },
   async getMap() {
     const settings = await settingsApi.list();

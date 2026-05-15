@@ -50,6 +50,27 @@ export const SettingsPage = () => {
     onError: (error: Error) => showToast(error.message, 'error'),
   });
 
+  if (settingsQuery.isError) {
+    const message = settingsQuery.error instanceof Error ? settingsQuery.error.message : 'Error de configuración';
+    return (
+      <section>
+        <PageHeader
+          title="Configuración"
+          subtitle="No se pudo cargar la tabla de settings en Supabase."
+        />
+        <Card>
+          <p className="error-text" style={{ marginBottom: 10 }}>
+            {message}
+          </p>
+          <p className="muted">Aplica la migración base y recarga la app.</p>
+          <div className="json-preview">
+            <code>npx supabase db push</code>
+          </div>
+        </Card>
+      </section>
+    );
+  }
+
   if (settingsQuery.isLoading) return <LoadingState label="Cargando configuración..." />;
 
   return (
