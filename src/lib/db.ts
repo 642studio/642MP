@@ -48,6 +48,11 @@ const parseMissingColumn = (message: string) => {
   return null;
 };
 
+const parseNotNullColumn = (message: string) => {
+  const match = message.match(/null value in column "([^"]+)"/i);
+  return match?.[1] ?? null;
+};
+
 const sanitizePayload = <T extends Record<string, unknown>>(payload: T) => {
   const entries = Object.entries(payload).filter(([, value]) => value !== undefined);
   return Object.fromEntries(entries) as Partial<T>;
@@ -58,6 +63,159 @@ const toString = (value: unknown, fallback = ''): string =>
 
 const toArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+
+const normalizeClientStatus = (value: unknown): Client['status'] => {
+  const normalized = toString(value).toLowerCase();
+  if (normalized === 'active') return 'active';
+  if (normalized === 'paused') return 'paused';
+  if (normalized === 'finished') return 'finished';
+  return 'prospect';
+};
+
+const normalizeClientRow = (row: Record<string, unknown>): Client => {
+  const now = new Date().toISOString();
+  const name =
+    toString(row.name).trim() ||
+    toString(row.commercial_name).trim() ||
+    toString(row.trade_name).trim() ||
+    toString(row.legal_name).trim() ||
+    'Cliente';
+
+  const businessName =
+    toString(row.business_name).trim() ||
+    toString(row.legal_name).trim() ||
+    null;
+
+  return {
+    id: toString(row.id),
+    name,
+    business_name: businessName,
+    industry: toString(row.industry).trim() || null,
+    city: toString(row.city).trim() || null,
+    zone: toString(row.zone).trim() || null,
+    address: toString(row.address).trim() || null,
+    instagram: toString(row.instagram).trim() || null,
+    facebook: toString(row.facebook).trim() || null,
+    tiktok: toString(row.tiktok).trim() || null,
+    website: toString(row.website).trim() || null,
+    contact_name: toString(row.contact_name).trim() || null,
+    contact_phone: toString(row.contact_phone).trim() || null,
+    contact_email: toString(row.contact_email).trim() || null,
+    logo_path: toString(row.logo_path).trim() || null,
+    brand_colors: toArray(row.brand_colors),
+    status: normalizeClientStatus(row.status),
+    responsible_user_id: toString(row.responsible_user_id).trim() || null,
+    notes: toString(row.notes).trim() || null,
+    created_at: toString(row.created_at, now),
+    updated_at: toString(row.updated_at, now),
+  };
+};
+
+const buildClientCreatePayloadWithAliases = (payload: Partial<Client>): Record<string, unknown> => {
+  const raw = sanitizePayload(payload as Record<string, unknown>);
+
+  const name = toString(raw.name).trim();
+  const businessName = toString(raw.business_name).trim();
+  const legalName = toString(raw.legal_name).trim() || businessName || name;
+  const commercialName =
+    toString(raw.commercial_name).trim() ||
+    toString(raw.trade_name).trim() ||
+    name ||
+    businessName ||
+    legalName;
+
+  return sanitizePayload({
+    ...raw,
+    name: name || commercialName || legalName || 'Cliente',
+    business_name: businessName || legalName || commercialName || 'Cliente',
+    legal_name: legalName || businessName || commercialName || 'Cliente',
+    commercial_name: commercialName || name || businessName || legalName || 'Cliente',
+    trade_name: commercialName || name || businessName || legalName || 'Cliente',
+    status: raw.status ?? 'prospect',
+    brand_colors: Array.isArray(raw.brand_colors) ? raw.brand_colors : [],
+  });
+};
+
+const buildClientUpdatePayloadWithAliases = (payload: Partial<Client>): Record<string, unknown> => {
+  const raw = sanitizePayload(payload as Record<string, unknown>);
+
+  const hasNameLikeField = ['name', 'business_name', 'legal_name', 'commercial_name', 'trade_name'].some(
+    (key) => {
+      const value = raw[key];
+      return typeof value === 'string';
+    },
+  );
+
+  if (!hasNameLikeField) {
+    return raw;
+  }
+
+  const name = toString(raw.name).trim();
+  const businessName = toString(raw.business_name).trim();
+  const legalName = toString(raw.legal_name).trim() || businessName || name;
+  const commercialName =
+    toString(raw.commercial_name).trim() ||
+    toString(raw.trade_name).trim() ||
+    name ||
+    businessName ||
+    legalName;
+  const preferredName = name || commercialName || legalName;
+
+  return sanitizePayload({
+    ...raw,
+    name: preferredName || raw.name,
+    business_name: businessName || legalName || commercialName || raw.business_name,
+    legal_name: legalName || businessName || commercialName || raw.legal_name,
+    commercial_name: commercialName || preferredName || raw.commercial_name,
+    trade_name: commercialName || preferredName || raw.trade_name,
+  });
+};
+
+const applyClientNotNullFallback = (
+  payload: Record<string, unknown>,
+  column: string,
+  userId: string | null,
+) => {
+  const currentName = toString(payload.name).trim();
+  const currentBusiness = toString(payload.business_name).trim();
+  const currentLegal = toString(payload.legal_name).trim();
+  const currentCommercial = toString(payload.commercial_name).trim() || toString(payload.trade_name).trim();
+  const preferredName = currentName || currentCommercial || currentLegal || currentBusiness || 'Cliente';
+  const preferredLegal = currentLegal || currentBusiness || preferredName;
+  const preferredCommercial = currentCommercial || currentName || preferredLegal;
+
+  const fallbackByColumn: Record<string, unknown> = {
+    name: preferredName,
+    business_name: preferredLegal,
+    legal_name: preferredLegal,
+    commercial_name: preferredCommercial,
+    trade_name: preferredCommercial,
+    status: 'prospect',
+    city: '',
+    zone: '',
+    address: '',
+    industry: '',
+    instagram: '',
+    facebook: '',
+    tiktok: '',
+    website: '',
+    contact_name: '',
+    contact_phone: '',
+    contact_email: '',
+    notes: '',
+    brand_colors: [],
+    responsible_user_id: userId,
+    created_by: userId,
+    owner_id: userId,
+    user_id: userId,
+  };
+
+  if (!(column in fallbackByColumn)) return false;
+  const fallback = fallbackByColumn[column];
+  if (fallback === null || fallback === undefined) return false;
+  payload[column] = fallback;
+  return true;
+};
 
 export const profileApi = {
   async getMine() {
@@ -120,25 +278,48 @@ export const profileApi = {
 export const clientApi = {
   async list() {
     const sb = requireSupabase();
-    const { data, error } = await sb.from('clients').select('*').order('name');
-    return ensure(data, error) as Client[];
+    const primary = await sb.from('clients').select('*').order('name');
+    if (!primary.error) {
+      const rows = ensure(primary.data, null) as Record<string, unknown>[];
+      return rows.map((row) => normalizeClientRow(row));
+    }
+
+    const missing = parseMissingColumn(primary.error.message);
+    if (missing && missing === 'name') {
+      const fallback = await sb.from('clients').select('*').order('created_at', { ascending: false });
+      const rows = ensure(fallback.data, fallback.error) as Record<string, unknown>[];
+      return rows.map((row) => normalizeClientRow(row));
+    }
+
+    throw new Error(primary.error.message);
   },
   async get(id: string) {
     const sb = requireSupabase();
     const { data, error } = await sb.from('clients').select('*').eq('id', id).single();
-    return ensure(data, error) as Client;
+    return normalizeClientRow(ensure(data, error) as Record<string, unknown>);
   },
   async create(payload: Partial<Client>) {
     const sb = requireSupabase();
-    let nextPayload = sanitizePayload(payload as Record<string, unknown>);
+    let nextPayload: Record<string, unknown> = buildClientCreatePayloadWithAliases(payload);
+    const {
+      data: { user },
+    } = await sb.auth.getUser();
+    const userId = user?.id ?? null;
     const maxAttempts = Math.max(Object.keys(nextPayload).length + 2, 8);
     const droppedColumns: string[] = [];
     let lastError: string | null = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const { data, error } = await sb.from('clients').insert(nextPayload).select('*').single();
-      if (!error) return ensure(data, null) as Client;
+      if (!error) return normalizeClientRow(ensure(data, null) as Record<string, unknown>);
       lastError = error.message;
+
+      const notNullColumn = parseNotNullColumn(error.message);
+      if (notNullColumn) {
+        const applied = applyClientNotNullFallback(nextPayload, notNullColumn, userId);
+        if (applied) continue;
+      }
+
       const missingColumn = parseMissingColumn(error.message);
       if (!missingColumn || !(missingColumn in nextPayload)) {
         throw new Error(error.message);
@@ -160,10 +341,15 @@ export const clientApi = {
   },
   async update(id: string, payload: Partial<Client>) {
     const sb = requireSupabase();
-    let nextPayload = sanitizePayload(payload as Record<string, unknown>);
+    let nextPayload: Record<string, unknown> = buildClientUpdatePayloadWithAliases(payload);
     if (Object.keys(nextPayload).length === 0) {
       return clientApi.get(id);
     }
+
+    const {
+      data: { user },
+    } = await sb.auth.getUser();
+    const userId = user?.id ?? null;
 
     const maxAttempts = Math.max(Object.keys(nextPayload).length + 2, 8);
     const droppedColumns: string[] = [];
@@ -174,8 +360,15 @@ export const clientApi = {
         return clientApi.get(id);
       }
       const { data, error } = await sb.from('clients').update(nextPayload).eq('id', id).select('*').single();
-      if (!error) return ensure(data, null) as Client;
+      if (!error) return normalizeClientRow(ensure(data, null) as Record<string, unknown>);
       lastError = error.message;
+
+      const notNullColumn = parseNotNullColumn(error.message);
+      if (notNullColumn) {
+        const applied = applyClientNotNullFallback(nextPayload, notNullColumn, userId);
+        if (applied) continue;
+      }
+
       const missingColumn = parseMissingColumn(error.message);
       if (!missingColumn || !(missingColumn in nextPayload)) {
         throw new Error(error.message);
