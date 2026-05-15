@@ -12,6 +12,11 @@ interface FormValues {
   ai_model: string;
 }
 
+const normalizeModelId = (value?: string) => {
+  if (!value || value === 'gpt-5.2-mini') return 'gpt-5-mini';
+  return value;
+};
+
 export const SettingsPage = () => {
   const { showToast } = useToast();
   const qc = useQueryClient();
@@ -23,7 +28,7 @@ export const SettingsPage = () => {
     defaultValues: {
       openai_key: '',
       serper_api_key: '',
-      ai_model: 'gpt-5.2-mini',
+      ai_model: 'gpt-5-mini',
     },
   });
 
@@ -33,7 +38,7 @@ export const SettingsPage = () => {
     form.reset({
       openai_key: map.get('openai_key') ?? '',
       serper_api_key: map.get('serper_api_key') ?? '',
-      ai_model: map.get('ai_model') ?? 'gpt-5.2-mini',
+      ai_model: normalizeModelId(map.get('ai_model')),
     });
   }, [settingsQuery.data]);
 
@@ -148,7 +153,7 @@ export const SettingsPage = () => {
 
           <Field label="Modelo IA">
             <Select {...form.register('ai_model')}>
-              <option value="gpt-5.2-mini">gpt-5.2-mini</option>
+              <option value="gpt-5-mini">gpt-5-mini</option>
               <option value="gpt-5.2">gpt-5.2</option>
               <option value="gpt-5.5">gpt-5.5</option>
             </Select>

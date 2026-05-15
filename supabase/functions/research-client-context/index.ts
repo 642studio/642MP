@@ -31,6 +31,12 @@ const parseJsonFromLLM = <T,>(text: string, fallback: T): T => {
   }
 };
 
+const normalizeModel = (value?: string | null) => {
+  const model = (value ?? '').trim();
+  if (!model || model === 'gpt-5.2-mini') return 'gpt-5-mini';
+  return model;
+};
+
 const serperSearch = async (apiKey: string, query: string, num: number) => {
   const response = await fetch('https://google.serper.dev/search', {
     method: 'POST',
@@ -88,7 +94,7 @@ serve(async (req) => {
 
     const map = new Map(settings.map((item) => [item.key, item.value]));
     const openaiKey = map.get('openai_key');
-    const aiModel = map.get('ai_model') ?? 'gpt-5.2-mini';
+    const aiModel = normalizeModel(map.get('ai_model'));
     const serperKey = map.get('serper_api_key');
 
     const localLimit = body.local_limit ?? 10;

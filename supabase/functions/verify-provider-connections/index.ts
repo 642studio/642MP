@@ -22,6 +22,12 @@ const safeMessage = (value: unknown, fallback: string) => {
   return value.slice(0, 220);
 };
 
+const normalizeModel = (value?: string | null) => {
+  const model = (value ?? '').trim();
+  if (!model || model === 'gpt-5.2-mini') return 'gpt-5-mini';
+  return model;
+};
+
 const fetchWithTimeout = async (input: string, init: RequestInit, timeoutMs: number) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -141,7 +147,7 @@ serve(async (req) => {
 
   try {
     const body = (await req.json()) as Payload;
-    const model = body.ai_model?.trim() || 'gpt-5.2-mini';
+    const model = normalizeModel(body.ai_model);
 
     const [supabaseStatus, openaiStatus, serperStatus] = await Promise.all([
       verifySupabase(req),

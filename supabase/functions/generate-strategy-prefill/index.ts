@@ -28,6 +28,12 @@ const parseJsonFromLLM = <T,>(text: string, fallback: T): T => {
   }
 };
 
+const normalizeModel = (value?: string | null) => {
+  const model = (value ?? '').trim();
+  if (!model || model === 'gpt-5.2-mini') return 'gpt-5-mini';
+  return model;
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -64,7 +70,7 @@ serve(async (req) => {
 
     const map = new Map(settings.map((item) => [item.key, item.value]));
     const openaiKey = map.get('openai_key');
-    const aiModel = map.get('ai_model') ?? 'gpt-5.2-mini';
+    const aiModel = normalizeModel(map.get('ai_model'));
 
     const now = new Date();
     const year = now.getUTCFullYear();

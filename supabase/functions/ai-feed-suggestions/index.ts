@@ -12,6 +12,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const normalizeModel = (value?: string | null) => {
+  const model = (value ?? '').trim();
+  if (!model || model === 'gpt-5.2-mini') return 'gpt-5-mini';
+  return model;
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -53,7 +59,7 @@ serve(async (req) => {
 
     const settingsMap = new Map(settings.map((item) => [item.key, item.value]));
     const openaiKey = settingsMap.get('openai_key');
-    const model = settingsMap.get('ai_model') ?? 'gpt-5.2-mini';
+    const model = normalizeModel(settingsMap.get('ai_model'));
 
     if (!openaiKey) {
       return new Response(
